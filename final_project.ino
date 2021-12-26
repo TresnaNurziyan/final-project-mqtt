@@ -4,6 +4,10 @@
 const char* ssid = "GRYFFINDOR";
 const char* password = "Al0homor4";
 const char* mqtt_server = "broker.mqtt-dashboard.com";
+const char* host = "script.google.com";
+const int httpsPort = 443;
+
+String SCRIPT_ID = "1b3PHimFdXWwRdBv6_LVCesV73MxfSK2WQbE5vyOLgLw";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -102,7 +106,7 @@ void loop() {
   }
   client.loop();
   
-  long duration, jarak;
+  long duration, distance;
   
   digitalWrite(triggerPin, LOW);
   delayMicroseconds(2); 
@@ -111,14 +115,13 @@ void loop() {
   digitalWrite(triggerPin, LOW);
   
   duration = pulseIn(echoPin, HIGH);
-  jarak = (duration/2) / 29.1;
+  distance = (duration/2) / 29.1;
   
-  Serial.println("jarak :");
-  Serial.print(jarak);
+  Serial.println("Jarak :");
+  Serial.print(distance);
   Serial.println(" cm");
-  delay(1000);
   
-  if (jarak < 10) 
+  if (distance < 10) 
   { 
     Serial.println("Motion detected");
     digitalWrite(ledPin, HIGH);
@@ -127,7 +130,7 @@ void loop() {
     if (now - lastMsg > 2000) {
       lastMsg = now;
       ++value;
-      snprintf (msg, MSG_BUFFER_SIZE, "Jarak air pada batas ambang bendungan: #%ld cm", jarak);
+      snprintf (msg, MSG_BUFFER_SIZE, "Jarak air pada batas ambang bendungan: #%ld cm", distance);
       Serial.print("Publish message: ");
       Serial.println(msg);
       client.publish("outSensorBanjir", msg);
@@ -136,4 +139,52 @@ void loop() {
   else {
     digitalWrite(ledPin, LOW);
   }
+  delay(1000);
+  sendData(distance);
 }
+
+void sendData(unsigned int value) {
+  Serial.println("==========");
+  Serial.print("connecting to ");
+  Serial.println(host);
+  
+  // Connect ke Google host
+  if (!espClient.connect(host, httpsPort)) {
+    Serial.println("connection failed");
+    return;
+  }
+
+  // Proses dan kirim data  
+  String string_nilai =  String(value, DEC); // fungsi DEC mengakhiri value terakhir  
+   
+  String url = "/macros/s/" + SCRIPT_ID + "/exec?value1=" + string_nilai; // variabel disamakan dengan yang di script google sheets
+  Serial.print("requesting URL: ");
+  Serial.println(url);
+
+  espClient.print(String("GET ") + url + " HTTP/1.1\r\n" +
+         "Host: " + host + "\r\n" +
+         "User-Agent: BuildFailureDetectorESP8266\r\n" +
+         "Connection: close\r\n\r\n");
+
+  Serial.println("request sent");
+
+  // Check data terkirim atau tidak 
+  while (espClient.connected()) {
+    String line = espClient.readStringUntil('\n');
+    if (line == "\r") {
+      Serial.println("headers received");
+      break;
+    }
+  }
+  String line = espClient.readStringUntil('\n');
+  if (line.startsWith("{\"state\":\"success\"")) {
+    Serial.println("esp8266/Arduino CI successfull!");
+  } else {
+    Serial.println("esp8266/Arduino CI has failed");
+  }
+  Serial.print("reply was : ");
+  Serial.println(line);
+  Serial.println("closing connection");
+  Serial.println("==========");
+  Serial.println();
+} 
